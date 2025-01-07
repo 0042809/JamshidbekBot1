@@ -1,0 +1,119 @@
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext
+
+ADMIN_CHAT_ID = 7255953399  # Admin ID ni bu yerga kiriting
+
+async def start(update: Update, context: CallbackContext):
+    # Foydalanuvchidan til tanlashni kutayotganini belgilaymiz
+    context.user_data['awaiting_language'] = True
+
+    keyboard = [['عربي 🇸🇦', 'O‘zbekcha 🇺🇿', 'Русский 🇷🇺', 'English 🇬🇧']]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
+    await update.message.reply_text(
+        ": اختر لغة/ Tilni tanlang / Выберите язык / Choose your language",
+        reply_markup=reply_markup
+    )
+
+async def language_selection(update: Update, context: CallbackContext):
+    # Agar til tanlash bosqichi bo'lmasa, hech narsa qilmaslik
+    if not context.user_data.get('awaiting_language', False):
+        return
+
+    selected_language = update.message.text
+    if selected_language == 'عربي 🇸🇦':
+        context.user_data['language'] = 'sa'
+    elif selected_language == 'O‘zbekcha 🇺🇿':
+        context.user_data['language'] = 'uz'
+    elif selected_language == 'Русский 🇷🇺':
+        context.user_data['language'] = 'ru'
+    elif selected_language == 'English 🇬🇧':
+        context.user_data['language'] = 'en'
+    else:
+        await update.message.reply_text("Iltimos, to‘g‘ri tanlov qiling va menyudagi tugmalarni ishlating.")
+        return
+
+    # Til tanlash yakunlandi
+    context.user_data['awaiting_language'] = False
+    await main_menu(update, context)
+
+async def main_menu(update: Update, context: CallbackContext):
+    language = context.user_data.get('language', 'sa')
+    if language == 'sa':
+        button_text = "الكتابة إلى جمشيدبك"
+        greeting = "اختيارك: عربي."
+    elif language == 'uz':
+        button_text = "Jamshidbekka yozish"
+        greeting = "Sizning tanlovingiz: O‘zbek tili."
+    elif language == 'ru':
+        button_text = "Написать Жамшидбеку"
+        greeting = "Ваш выбор: Русский язык."
+    else:
+        button_text = "Write to Jamshidbek"
+        greeting = "Your choice: English."
+
+    keyboard = [[KeyboardButton(button_text)]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text(
+        greeting,
+        reply_markup=reply_markup
+    )
+
+async def handle_write_request(update: Update, context: CallbackContext):
+    language = context.user_data.get('language', 'sa')
+    if language == 'sa':
+        prompt = ("للكتابة إلى جمشيدبك، املأ ما يلي:\n"
+                  "1. اكتب من أنت.\n"
+                  "2. الغرض من طلبك.\n"
+                  "3. معلومات الاتصال الخاصة بك (الهاتف، البريد الإلكتروني، برقية، وما إلى ذلك).")
+    elif language == 'uz':
+        prompt = ("Jamshidbekka yozish uchun quyidagilarni to‘ldiring:\n"
+                  "1. Kim ekanligingizni yozing.\n"
+                  "2. Murojaatingizning maqsadi.\n"
+                  "3. Bog‘lanish ma’lumotlaringiz (telefon, email, Telegram va hokazo).")
+    elif language == 'ru':
+        prompt = ("Чтобы написать Жамшидбеку, заполните следующее:\n"
+                  "1. Кто вы.\n"
+                  "2. Цель вашего обращения.\n"
+                  "3. Ваши контактные данные (телефон, email, Telegram и т.д.).")
+    else:
+        prompt = ("To write to Jamshidbek, please fill out the following:\n"
+                  "1. Who you are.\n"
+                  "2. Purpose of your message.\n"
+                  "3. Your contact details (phone, email, Telegram, etc.).")
+
+    # Belgilaymizki, foydalanuvchi xabar yozmoqda
+    context.user_data['writing_message'] = True
+    await update.message.reply_text(prompt)
+
+async def forward_to_admin(update: Update, context: CallbackContext):
+    # Faqat "writing_message" holatida xabarni qabul qilish
+    if context.user_data.get('writing_message', False):
+        user_message = update.message.text
+        user_info = f"Foydalanuvchi: {update.effective_user.full_name}\nXabar:\n{user_message}"
+        await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=user_info)
+
+        # Holatni qayta o‘chirib qo‘yamiz
+        context.user_data['writing_message'] = False
+
+        # Tasdiq xabarini yuboramiz
+        await update.message.reply_text("لقد تم ارسال رسالتك الى جامشيدبك !\n"
+                                        "Xabaringiz Jamshidbekka yuborildi!\n"
+                                        "Ваше сообщение отправлено Жамшидбеку!\n"
+                                        "Your message has been sent to Jamshidbek!")
+
+if __name__ == "__main__":
+    app = ApplicationBuilder().token("7256972823:AAEs_zx_OdCukZurrDeBebAr6tCOnodfeZQ").build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(
+        MessageHandler(filters.Regex("^(عربي 🇸🇦|O‘zbekcha 🇺🇿|Русский 🇷🇺|English 🇬🇧)$"),
+                       language_selection)
+    )
+    app.add_handler(
+        MessageHandler(filters.Regex("^(الكتابة إلى جمشيدبك|Jamshidbekka yozish|Написать Жамшидбеку|Write to Jamshidbek)$"),
+                       handle_write_request)
+    )
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_to_admin))
+
+    print("Bot ishlayapti...")
+    app.run_polling()
